@@ -1,0 +1,50 @@
+name: Daily 50 Cleaning Blog Posts
+
+on:
+  schedule:
+    # GitHub Actions cron uses UTC. 00:00 UTC = 09:00 KST.
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-50-cleaning-blog
+  cancel-in-progress: false
+
+jobs:
+  generate-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate 50 cleaning stories
+        env:
+          TZ: Asia/Seoul
+        run: python daily_50_blog_posts.py
+
+      - name: Update sitemap and robots
+        env:
+          TZ: Asia/Seoul
+        run: python update_sitemap.py
+
+      - name: Commit and push generated pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add generated_site/cleaning-story generated_site/sitemap.xml generated_site/robots.txt
+          if git diff --cached --quiet; then
+            echo "No new pages to commit."
+            exit 0
+          fi
+          git commit -m "daily 50 cleaning stories $(TZ=Asia/Seoul date +%Y-%m-%d)"
+          git push origin HEAD:main
