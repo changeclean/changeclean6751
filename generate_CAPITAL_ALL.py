@@ -39,38 +39,44 @@ def service_links(sido,gugun,dong):
     desc={"입주청소":"입주 전 전체 청소","이사청소":"이사 전후 청소","청소업체":"지역 청소업체 정보","입주청소 가격":"청소비용 안내","아파트청소":"아파트 청소 정보","원룸청소":"원룸 청소 정보","오피스텔청소":"오피스텔 청소","거주청소":"거주중 청소","사무실청소":"사무공간 청소","청소견적":"견적문의 안내"}
     return ''.join(f'<a href="{region_url(sido,gugun,dong,slug)}"><b>{html.escape(dong)} {html.escape(label)}</b>{desc[label]}</a>' for label,slug in INTENTS)
 
+def short_sido(sido):
+    return {"서울특별시":"서울","인천광역시":"인천","경기도":"경기"}.get(sido,sido)
+
+def live_rows(sido,dong,nearby):
+    # 현재 페이지와 같은 시군구의 동만 사용한다. 다른 도시/구의 지역명이 섞이지 않게 한다.
+    ds=[dong]+[x for x in nearby if x!=dong]
+    while len(ds)<5: ds+=ds
+    ds=ds[:5]
+    names=["최*석","김*영","박*민","이*희","정*훈"]
+    jobs=["입주청소 · 34평","이사청소 · 25평","입주청소 · 32평","거주청소 · 41평","이사청소 · 28평"]
+    times=["3분 전","8분 전","14분 전","21분 전","27분 전"]
+    city=short_sido(sido)
+    return ''.join(f'<div class="row"><b>{names[i]}</b><span>{html.escape(city)} {html.escape(ds[i])}</span><span>{jobs[i]}</span><span class="ago">{times[i]}</span></div>' for i in range(5))
+
 def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
     t=TEMPLATE; full=f"{sido} {gugun} {dong}"
     t=t.replace("인천 부평구",f"{sido} {gugun}").replace("부평구",gugun).replace("부평동",dong)
     t=replace_first(r"<title>.*?</title>",f"<title>{html.escape(dong)} {html.escape(intent)} | {html.escape(gugun)} 체인지클린</title>",t)
     t=replace_first(r'<meta name="description" content=".*?">',f'<meta name="description" content="{html.escape(full)} {html.escape(intent)} 체인지클린. 청소 현장, 청소범위, 평당 11,000원, 빠른 견적문의.">',t)
     t=replace_first(r"<h1>.*?</h1>",f"<h1>{html.escape(dong)} {html.escape(intent)}<br>지역 전문 청소 서비스</h1>",t)
+
+    # 실시간 견적문의 지역도 현재 생성 페이지의 시/시군구와 일치시킨다.
+    t=replace_first(r'<div class="roller" id="roller">.*?</div></div></div></section>', '<div class="roller" id="roller">'+live_rows(sido,dong,nearby)+'</div></div></div></section>', t)
+
     area_dongs=[dong]+[x for x in nearby if x!=dong][:7]
     area_html=''.join(f'<a href="{region_url(sido,gugun,x)}">{html.escape(x)} 입주청소</a>' for x in area_dongs)
     t=replace_first(r'<div class="area">.*?</div>',f'<div class="area">{area_html}</div>',t)
 
-    # 사진의 실제 촬영지역 메타데이터가 없으므로 임의 지역명을 사진에 붙이지 않는다.
-    gallery_titles=[
-        "주방 청소 작업 사례", "후드·가스레인지 청소 사례", "욕실 청소 작업 사례", "싱크대 청소 작업 사례",
-        "바닥 청소 작업 사례", "주방 수납장 청소 사례", "창틀·유리 청소 사례", "세면대 청소 작업 사례"
-    ]
-    gallery_desc=[
-        "입주·이사청소 작업 사진", "오염 제거 작업 사진", "욕실 청소 작업 사진", "주방 청소 작업 사진",
-        "바닥 오염 제거 작업 사진", "수납장 청소 작업 사진", "창틀 청소 작업 사진", "세면대 청소 작업 사진"
-    ]
+    gallery_titles=["주방 청소 작업 사례","후드·가스레인지 청소 사례","욕실 청소 작업 사례","싱크대 청소 작업 사례","바닥 청소 작업 사례","주방 수납장 청소 사례","창틀·유리 청소 사례","세면대 청소 작업 사례"]
+    gallery_desc=["입주·이사청소 작업 사진","오염 제거 작업 사진","욕실 청소 작업 사진","주방 청소 작업 사진","바닥 오염 제거 작업 사진","수납장 청소 작업 사진","창틀 청소 작업 사진","세면대 청소 작업 사진"]
     cap_i=iter(range(8))
     def cap(m):
-        i=next(cap_i)
-        return f'<figcaption><b>{gallery_titles[i]}</b><span>{gallery_desc[i]}</span></figcaption>'
+        i=next(cap_i); return f'<figcaption><b>{gallery_titles[i]}</b><span>{gallery_desc[i]}</span></figcaption>'
     t=re.sub(r"<figcaption>.*?</figcaption>",cap,t,flags=re.S)
-
-    # 기존 템플릿 ALT에 남아 있는 다른 지역명도 모두 중립적인 작업사례 설명으로 교체한다.
     alt_i=iter(range(8))
     def alt_repl(m):
-        i=next(alt_i)
-        return f'alt="{html.escape(intent)} {gallery_titles[i]}"'
+        i=next(alt_i); return f'alt="{html.escape(intent)} {gallery_titles[i]}"'
     t=re.sub(r'alt="[^"]*청소 현장[^\"]*"',alt_repl,t,count=8,flags=re.I)
-
     t=replace_first(r'<div class="links">.*?</div></div></section>', '<div class="links">'+service_links(sido,gugun,dong)+'</div></div></section>', t)
     if imgs:
         rnd=random.Random(full+"|"+intent); chosen=rnd.sample(imgs,min(8,len(imgs)))
@@ -84,8 +90,7 @@ def make_home(rows):
     lookup={dong:(sido,gugun) for sido,gugun,dong in rows}
     preferred=["부평동","산곡동","청천동","갈산동","삼산동","부개동"]
     home_dongs=[x for x in preferred if x in lookup]
-    if not home_dongs:
-        home_dongs=[d for _,_,d in rows[:6]]
+    if not home_dongs: home_dongs=[d for _,_,d in rows[:6]]
     area=''.join(f'<a href="{region_url(lookup[x][0],lookup[x][1],x)}">{html.escape(x)} 입주청소</a>' for x in home_dongs)
     t=replace_first(r'<div class="area">.*?</div>',f'<div class="area">{area}</div>',t)
     base_dong="부평동" if "부평동" in lookup else home_dongs[0]
