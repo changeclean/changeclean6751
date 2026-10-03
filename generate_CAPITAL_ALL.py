@@ -41,12 +41,9 @@ def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
     t=replace_first(r"<title>.*?</title>",f"<title>{html.escape(dong)} {html.escape(intent)} | {html.escape(gugun)} 체인지클린</title>",t)
     t=replace_first(r'<meta name="description" content=".*?">',f'<meta name="description" content="{html.escape(full)} {html.escape(intent)} 체인지클린. 청소 현장, 청소범위, 평당 11,000원, 빠른 견적문의.">',t)
     t=replace_first(r"<h1>.*?</h1>",f"<h1>{html.escape(dong)} {html.escape(intent)}<br>지역 전문 청소 서비스</h1>",t)
-
-    # 지역별 청소 버튼도 실제 생성 폴더로 연결
     area_dongs=[dong]+[x for x in nearby if x!=dong][:7]
     area_html=''.join(f'<a href="{region_url(sido,gugun,x)}">{html.escape(x)} 입주청소</a>' for x in area_dongs)
     t=replace_first(r'<div class="area">.*?</div>',f'<div class="area">{area_html}</div>',t)
-
     buildings=["아파트","빌라","오피스텔","아파트","빌라","주택","오피스텔","아파트"]
     places=[dong]+[x for x in nearby if x!=dong]
     if not places: places=[dong]
@@ -55,7 +52,6 @@ def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
     def cap(m):
         nd,b=next(caps); return f'<figcaption><b>{html.escape(nd)} {b} 청소</b><span>{html.escape(gugun)} {b} 청소 현장</span></figcaption>'
     t=re.sub(r"<figcaption>.*?</figcaption>",cap,t,flags=re.S)
-
     link_html=[]; region_key=safe_ascii(full)
     for label,sl in INTENTS:
         link_html.append(f'<a href="/{region_key}/{sl}/"><b>{html.escape(dong)} {html.escape(label)}</b>{html.escape(label)} 정보</a>')
@@ -68,18 +64,34 @@ def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
     return t
 
 def make_home(rows):
-    # 홈의 기존 한글 상대링크를 실제 생성된 ASCII 경로로 교체
     t=(ROOT/"index.html").read_text(encoding="utf-8")
     lookup={dong:(sido,gugun) for sido,gugun,dong in rows}
+    intent_paths={
+        "입주청소":"movein-cleaning",
+        "이사청소":"moving-cleaning",
+        "청소업체":"cleaning-company",
+        "입주청소-가격":"movein-cleaning-price",
+        "입주청소 가격":"movein-cleaning-price",
+        "아파트청소":"apartment-cleaning",
+        "원룸청소":"oneroom-cleaning",
+        "오피스텔청소":"officetel-cleaning",
+        "거주청소":"occupied-cleaning",
+        "사무실청소":"office-cleaning",
+        "청소견적":"cleaning-estimate",
+    }
+    suffixes=sorted(intent_paths,key=len,reverse=True)
     def fix(m):
-        dong,label=m.group(1),m.group(2)
-        if dong not in lookup: return m.group(0)
-        sido,gugun=lookup[dong]
-        slug=dict(INTENTS).get(label,"movein-cleaning")
-        return f'href="{region_url(sido,gugun,dong,slug)}"'
-    # href="청천동-입주청소/" / bu평동 오타까지 처리
-    t=re.sub(r'href="(?:bu)?([^/"-]+)-(입주청소|이사청소|청소업체|입주청소 가격|아파트청소|원룸청소|오피스텔청소|거주청소|사무실청소|청소견적)/"',fix,t)
-    # 명시적으로 홈 지역 버튼 생성 (부평구 예시 영역)
+        raw=m.group(1).strip()
+        raw=re.sub(r'^bu(?=[가-힣])','',raw,flags=re.I)
+        for suffix in suffixes:
+            marker='-'+suffix
+            if raw.endswith(marker):
+                dong=raw[:-len(marker)]
+                if dong in lookup:
+                    sido,gugun=lookup[dong]
+                    return f'href="{region_url(sido,gugun,dong,intent_paths[suffix])}"'
+        return m.group(0)
+    t=re.sub(r'href="([^"/]+?)/"',fix,t)
     home_dongs=[x for x in ["부평동","산곡동","청천동","갈산동","삼산동","부개동"] if x in lookup]
     area=''.join(f'<a href="{region_url(lookup[x][0],lookup[x][1],x)}">{x} 입주청소</a>' for x in home_dongs)
     t=replace_first(r'<div class="area">.*?</div>',f'<div class="area">{area}</div>',t)
