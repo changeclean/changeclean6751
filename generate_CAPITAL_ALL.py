@@ -48,14 +48,29 @@ def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
     area_dongs=[dong]+[x for x in nearby if x!=dong][:7]
     area_html=''.join(f'<a href="{region_url(sido,gugun,x)}">{html.escape(x)} 입주청소</a>' for x in area_dongs)
     t=replace_first(r'<div class="area">.*?</div>',f'<div class="area">{area_html}</div>',t)
-    buildings=["아파트","빌라","오피스텔","아파트","빌라","주택","오피스텔","아파트"]
-    places=[dong]+[x for x in nearby if x!=dong]
-    if not places: places=[dong]
-    while len(places)<8: places+=places
-    caps=iter([(places[i],buildings[i]) for i in range(8)])
+
+    # 사진의 실제 촬영지역 메타데이터가 없으므로 임의 지역명을 사진에 붙이지 않는다.
+    gallery_titles=[
+        "주방 청소 작업 사례", "후드·가스레인지 청소 사례", "욕실 청소 작업 사례", "싱크대 청소 작업 사례",
+        "바닥 청소 작업 사례", "주방 수납장 청소 사례", "창틀·유리 청소 사례", "세면대 청소 작업 사례"
+    ]
+    gallery_desc=[
+        "입주·이사청소 작업 사진", "오염 제거 작업 사진", "욕실 청소 작업 사진", "주방 청소 작업 사진",
+        "바닥 오염 제거 작업 사진", "수납장 청소 작업 사진", "창틀 청소 작업 사진", "세면대 청소 작업 사진"
+    ]
+    cap_i=iter(range(8))
     def cap(m):
-        nd,b=next(caps); return f'<figcaption><b>{html.escape(nd)} {b} 청소</b><span>{html.escape(gugun)} {b} 청소 현장</span></figcaption>'
+        i=next(cap_i)
+        return f'<figcaption><b>{gallery_titles[i]}</b><span>{gallery_desc[i]}</span></figcaption>'
     t=re.sub(r"<figcaption>.*?</figcaption>",cap,t,flags=re.S)
+
+    # 기존 템플릿 ALT에 남아 있는 다른 지역명도 모두 중립적인 작업사례 설명으로 교체한다.
+    alt_i=iter(range(8))
+    def alt_repl(m):
+        i=next(alt_i)
+        return f'alt="{html.escape(intent)} {gallery_titles[i]}"'
+    t=re.sub(r'alt="[^"]*청소 현장[^\"]*"',alt_repl,t,count=8,flags=re.I)
+
     t=replace_first(r'<div class="links">.*?</div></div></section>', '<div class="links">'+service_links(sido,gugun,dong)+'</div></div></section>', t)
     if imgs:
         rnd=random.Random(full+"|"+intent); chosen=rnd.sample(imgs,min(8,len(imgs)))
@@ -73,7 +88,6 @@ def make_home(rows):
         home_dongs=[d for _,_,d in rows[:6]]
     area=''.join(f'<a href="{region_url(lookup[x][0],lookup[x][1],x)}">{html.escape(x)} 입주청소</a>' for x in home_dongs)
     t=replace_first(r'<div class="area">.*?</div>',f'<div class="area">{area}</div>',t)
-    # 홈의 10개 서비스 링크는 기존 한글 href를 치환하지 않고 실제 생성 경로로 블록 자체를 새로 만든다.
     base_dong="부평동" if "부평동" in lookup else home_dongs[0]
     sido,gugun=lookup[base_dong]
     t=replace_first(r'<div class="links">.*?</div></div></section>', '<div class="links">'+service_links(sido,gugun,base_dong)+'</div></div></section>', t)
