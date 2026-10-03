@@ -57,7 +57,6 @@ def live_rows(sido,dong,nearby):
     return ''.join(f'<div class="row"><b>{names[i]}</b><span>{html.escape(city)} {html.escape(ds[i])}</span><span>{jobs[i]}</span><span class="ago">{times[i]}</span></div>' for i in range(5))
 
 def gallery_dongs(dong,nearby,n=8):
-    # 현재 동 + 같은 시군구의 인근 동을 사진별로 분산한다.
     ds=[x for x in nearby if x!=dong]
     if dong not in ds: ds.append(dong)
     if not ds: ds=[dong]
@@ -67,14 +66,11 @@ def gallery_dongs(dong,nearby,n=8):
 def replace_gallery_images(t,chosen,gallery_names):
     m=re.search(r'(<section class="sec" id="works">)(.*?)(</section>)',t,flags=re.S)
     if not m: return t
-    block=m.group(2)
-    i=0
+    block=m.group(2); i=0
     def repl_img(mm):
         nonlocal i
         if i>=len(chosen): return mm.group(0)
-        p=chosen[i]
-        alt=html.escape(f"{gallery_names[i]} 청소 작업사진")
-        i+=1
+        p=chosen[i]; alt=html.escape(f"{gallery_names[i]} 청소 작업사진"); i+=1
         return f'<img src="/assets/{p.name}" alt="{alt}" loading="lazy">'
     block=re.sub(r'<img\b[^>]*>',repl_img,block,count=min(8,len(chosen)),flags=re.I)
     return t[:m.start()]+m.group(1)+block+m.group(3)+t[m.end():]
@@ -85,30 +81,24 @@ def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
     t=replace_first(r"<title>.*?</title>",f"<title>{html.escape(dong)} {html.escape(intent)} | {html.escape(gugun)} 체인지클린</title>",t)
     t=replace_first(r'<meta name="description" content=".*?">',f'<meta name="description" content="{html.escape(full)} {html.escape(intent)} 체인지클린. 청소 현장, 청소범위, 평당 11,000원, 빠른 견적문의.">',t)
     t=replace_first(r"<h1>.*?</h1>",f"<h1>{html.escape(dong)} {html.escape(intent)}<br>지역 전문 청소 서비스</h1>",t)
-
     hero_ds=local_dongs(dong,nearby,5)
     hero_regions='·'.join(html.escape(x) for x in hero_ds)
     t=re.sub(r'<p class="lead">.*?</p>',f'<p class="lead">{hero_regions} 등 지역별 청소 정보를 확인하고 청소 현장과 청소 범위를 살펴본 뒤 간편하게 견적을 문의할 수 있습니다.</p>',t,count=1,flags=re.S)
     t=replace_first(r'<div class="roller" id="roller">.*?</div></div></div></section>', '<div class="roller" id="roller">'+live_rows(sido,dong,nearby)+'</div></div></div></section>', t)
-
     area_dongs=[dong]+[x for x in nearby if x!=dong][:7]
     area_html=''.join(f'<a href="{region_url(sido,gugun,x)}">{html.escape(x)} 입주청소</a>' for x in area_dongs)
     t=replace_first(r'<div class="area">.*?</div>',f'<div class="area">{area_html}</div>',t)
-
-    # 사진 내용(주방/욕실 등)을 추측하지 않고 같은 시군구의 인근 동 작업사진으로 표시한다.
     gnames=gallery_dongs(dong,nearby,8)
     cap_i=iter(range(8))
     def cap(m):
         i=next(cap_i)
-        return f'<figcaption><b>{html.escape(gnames[i])} 청소 작업사진</b><span>{html.escape(gugun)} 인근지역 청소 현장</span></figcaption>'
+        return f'<figcaption><b>{html.escape(gnames[i])} 청소 작업사진</b></figcaption>'
     t=re.sub(r"<figcaption>.*?</figcaption>",cap,t,count=8,flags=re.S)
-
     if imgs:
         rnd=random.Random(full+"|"+intent)
         chosen=rnd.sample(imgs,min(8,len(imgs)))
         while len(chosen)<8: chosen+=chosen
         t=replace_gallery_images(t,chosen[:8],gnames)
-
     t=replace_first(r'<div class="links">.*?</div></div></section>', '<div class="links">'+service_links(sido,gugun,dong)+'</div></div></section>', t)
     t=re.sub(r'action="https://formspree\.io/f/[^"]+"','action="https://formspree.io/f/mvzlylrr"',t)
     return t
@@ -144,8 +134,7 @@ def validate_gallery_images():
         m=re.search(r'<section class="sec" id="works">(.*?)</section>',text,flags=re.S)
         if not m: continue
         srcs=re.findall(r'<img\b[^>]*src="([^"]+)"',m.group(1),flags=re.I)
-        if len(srcs)!=8 or any(not x.startswith("/assets/") for x in srcs):
-            bad.append((page.relative_to(OUT).as_posix(),srcs))
+        if len(srcs)!=8 or any(not x.startswith("/assets/") for x in srcs): bad.append((page.relative_to(OUT).as_posix(),srcs))
     return bad
 
 def main():
