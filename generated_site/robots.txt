@@ -1,7 +1,4 @@
-﻿User-agent: *
-Allow: /
-
-User-agent: Yeti
+User-agent: *
 Allow: /
 
 Sitemap: https://changeclean6751.netlify.app/sitemap.xml
