@@ -32,7 +32,7 @@ jobs:
           TZ: Asia/Seoul
         run: python daily_50_blog_posts.py
 
-      - name: Update sitemap and robots
+      - name: Update sitemap robots and RSS
         env:
           TZ: Asia/Seoul
         run: python update_sitemap.py
@@ -41,7 +41,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add generated_site/cleaning-story generated_site/sitemap.xml generated_site/robots.txt
+          git add generated_site/cleaning-story generated_site/sitemap.xml generated_site/robots.txt generated_site/rss.xml
           if git diff --cached --quiet; then
             echo "No new pages to commit."
             exit 0
