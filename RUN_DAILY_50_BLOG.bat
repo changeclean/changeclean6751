@@ -10,14 +10,24 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+
 echo.
 echo [OK] 50 blog pages generated.
+echo Updating sitemap.xml and robots.txt...
+python update_sitemap.py
+if errorlevel 1 (
+  echo [ERROR] Sitemap update failed.
+  pause
+  exit /b 1
+)
+
 echo.
 echo Git add/commit/push starting...
-git add generated_site/cleaning-story
-git commit -m "daily 50 cleaning stories"
+git add generated_site/cleaning-story generated_site/sitemap.xml generated_site/robots.txt
+git commit -m "daily 50 cleaning stories and sitemap"
 if errorlevel 1 echo [INFO] Nothing new to commit or commit skipped.
 git push origin main
+
 echo.
-echo [DONE]
+echo [DONE] Netlify will deploy automatically from GitHub.
 pause
