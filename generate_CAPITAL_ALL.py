@@ -42,16 +42,35 @@ def service_links(sido,gugun,dong):
 def short_sido(sido):
     return {"서울특별시":"서울","인천광역시":"인천","경기도":"경기"}.get(sido,sido)
 
-def live_rows(sido,dong,nearby):
-    # 현재 페이지와 같은 시군구의 동만 사용한다. 다른 도시/구의 지역명이 섞이지 않게 한다.
+def local_dongs(dong,nearby,n=5):
     ds=[dong]+[x for x in nearby if x!=dong]
-    while len(ds)<5: ds+=ds
-    ds=ds[:5]
+    if not ds: ds=[dong]
+    while len(ds)<n: ds+=ds
+    return ds[:n]
+
+def live_rows(sido,dong,nearby):
+    ds=local_dongs(dong,nearby,5)
     names=["최*석","김*영","박*민","이*희","정*훈"]
     jobs=["입주청소 · 34평","이사청소 · 25평","입주청소 · 32평","거주청소 · 41평","이사청소 · 28평"]
     times=["3분 전","8분 전","14분 전","21분 전","27분 전"]
     city=short_sido(sido)
     return ''.join(f'<div class="row"><b>{names[i]}</b><span>{html.escape(city)} {html.escape(ds[i])}</span><span>{jobs[i]}</span><span class="ago">{times[i]}</span></div>' for i in range(5))
+
+def replace_gallery_images(t,chosen,intent,gallery_titles):
+    # 갤러리 #works 안의 8개 img만 정확히 교체한다. 첫 이미지만 바뀌는 문제와 상대경로 문제를 동시에 방지한다.
+    m=re.search(r'(<section class="sec" id="works">)(.*?)(</section>)',t,flags=re.S)
+    if not m: return t
+    block=m.group(2)
+    i=0
+    def repl_img(mm):
+        nonlocal i
+        if i>=len(chosen): return mm.group(0)
+        p=chosen[i]
+        alt=html.escape(f"{intent} {gallery_titles[i]}")
+        i+=1
+        return f'<img src="/assets/{p.name}" alt="{alt}" loading="lazy">'
+    block=re.sub(r'<img\b[^>]*>',repl_img,block,count=min(8,len(chosen)),flags=re.I)
+    return t[:m.start()]+m.group(1)+block+m.group(3)+t[m.end():]
 
 def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
     t=TEMPLATE; full=f"{sido} {gugun} {dong}"
@@ -60,7 +79,11 @@ def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
     t=replace_first(r'<meta name="description" content=".*?">',f'<meta name="description" content="{html.escape(full)} {html.escape(intent)} 체인지클린. 청소 현장, 청소범위, 평당 11,000원, 빠른 견적문의.">',t)
     t=replace_first(r"<h1>.*?</h1>",f"<h1>{html.escape(dong)} {html.escape(intent)}<br>지역 전문 청소 서비스</h1>",t)
 
-    # 실시간 견적문의 지역도 현재 생성 페이지의 시/시군구와 일치시킨다.
+    # 히어로 소개문구의 고정 부평 동 목록을 현재 시군구의 실제 동 목록으로 교체한다.
+    hero_ds=local_dongs(dong,nearby,5)
+    hero_regions='·'.join(html.escape(x) for x in hero_ds)
+    t=re.sub(r'<p class="lead">.*?</p>',f'<p class="lead">{hero_regions} 등 지역별 청소 정보를 확인하고 청소 현장과 청소 범위를 살펴본 뒤 간편하게 견적을 문의할 수 있습니다.</p>',t,count=1,flags=re.S)
+
     t=replace_first(r'<div class="roller" id="roller">.*?</div></div></div></section>', '<div class="roller" id="roller">'+live_rows(sido,dong,nearby)+'</div></div></div></section>', t)
 
     area_dongs=[dong]+[x for x in nearby if x!=dong][:7]
@@ -73,15 +96,14 @@ def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
     def cap(m):
         i=next(cap_i); return f'<figcaption><b>{gallery_titles[i]}</b><span>{gallery_desc[i]}</span></figcaption>'
     t=re.sub(r"<figcaption>.*?</figcaption>",cap,t,flags=re.S)
-    alt_i=iter(range(8))
-    def alt_repl(m):
-        i=next(alt_i); return f'alt="{html.escape(intent)} {gallery_titles[i]}"'
-    t=re.sub(r'alt="[^"]*청소 현장[^\"]*"',alt_repl,t,count=8,flags=re.I)
-    t=replace_first(r'<div class="links">.*?</div></div></section>', '<div class="links">'+service_links(sido,gugun,dong)+'</div></div></section>', t)
+
     if imgs:
-        rnd=random.Random(full+"|"+intent); chosen=rnd.sample(imgs,min(8,len(imgs)))
+        rnd=random.Random(full+"|"+intent)
+        chosen=rnd.sample(imgs,min(8,len(imgs)))
         while len(chosen)<8: chosen+=chosen
-        for p in chosen[:8]: t=re.sub(r'src="(?:assets/|/assets/)[^"]+\.(?:jpg|jpeg|png|webp)"',f'src="/assets/{p.name}"',t,count=1,flags=re.I)
+        t=replace_gallery_images(t,chosen[:8],intent,gallery_titles)
+
+    t=replace_first(r'<div class="links">.*?</div></div></section>', '<div class="links">'+service_links(sido,gugun,dong)+'</div></div></section>', t)
     t=re.sub(r'action="https://formspree\.io/f/[^"]+"','action="https://formspree.io/f/mvzlylrr"',t)
     return t
 
@@ -108,6 +130,18 @@ def validate_links():
             if not target.exists(): broken.append((page.relative_to(OUT).as_posix(),href))
     return broken
 
+def validate_gallery_images():
+    bad=[]
+    for page in OUT.rglob("*.html"):
+        if page == OUT/"index.html": continue
+        text=page.read_text(encoding="utf-8",errors="ignore")
+        m=re.search(r'<section class="sec" id="works">(.*?)</section>',text,flags=re.S)
+        if not m: continue
+        srcs=re.findall(r'<img\b[^>]*src="([^"]+)"',m.group(1),flags=re.I)
+        if len(srcs)!=8 or any(not x.startswith("/assets/") for x in srcs):
+            bad.append((page.relative_to(OUT).as_posix(),srcs))
+    return bad
+
 def main():
     rows=fetch_regions(); by_gu=build_neighbors(rows)
     imgs=sorted([p for p in ASSETS.iterdir() if p.suffix.lower() in {".jpg",".jpeg",".png",".webp"}])
@@ -123,9 +157,14 @@ def main():
     urls=[region_url(s,g,d,sl) for s,g,d in rows for _,sl in INTENTS]
     (OUT/"urls.txt").write_text("\n".join(urls),encoding="utf-8")
     broken=validate_links()
+    bad_images=validate_gallery_images()
     if broken:
         print(f"[오류] 내부링크 {len(broken):,}개가 실제 페이지와 연결되지 않습니다.")
         for page,href in broken[:20]: print(" -",page,"->",href)
         raise SystemExit(1)
-    print(f"[완료] {count:,}개 생성 / 내부링크 검사 0개 오류")
+    if bad_images:
+        print(f"[오류] 갤러리 이미지 경로 이상 {len(bad_images):,}페이지")
+        for page,srcs in bad_images[:20]: print(" -",page,srcs)
+        raise SystemExit(1)
+    print(f"[완료] {count:,}개 생성 / 내부링크 0개 오류 / 갤러리 이미지 경로 0개 오류")
 if __name__=="__main__": main()
