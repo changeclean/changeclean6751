@@ -56,8 +56,15 @@ def live_rows(sido,dong,nearby):
     city=short_sido(sido)
     return ''.join(f'<div class="row"><b>{names[i]}</b><span>{html.escape(city)} {html.escape(ds[i])}</span><span>{jobs[i]}</span><span class="ago">{times[i]}</span></div>' for i in range(5))
 
-def replace_gallery_images(t,chosen,intent,gallery_titles):
-    # 갤러리 #works 안의 8개 img만 정확히 교체한다. 첫 이미지만 바뀌는 문제와 상대경로 문제를 동시에 방지한다.
+def gallery_dongs(dong,nearby,n=8):
+    # 현재 동 + 같은 시군구의 인근 동을 사진별로 분산한다.
+    ds=[x for x in nearby if x!=dong]
+    if dong not in ds: ds.append(dong)
+    if not ds: ds=[dong]
+    while len(ds)<n: ds+=ds
+    return ds[:n]
+
+def replace_gallery_images(t,chosen,gallery_names):
     m=re.search(r'(<section class="sec" id="works">)(.*?)(</section>)',t,flags=re.S)
     if not m: return t
     block=m.group(2)
@@ -66,7 +73,7 @@ def replace_gallery_images(t,chosen,intent,gallery_titles):
         nonlocal i
         if i>=len(chosen): return mm.group(0)
         p=chosen[i]
-        alt=html.escape(f"{intent} {gallery_titles[i]}")
+        alt=html.escape(f"{gallery_names[i]} 청소 작업사진")
         i+=1
         return f'<img src="/assets/{p.name}" alt="{alt}" loading="lazy">'
     block=re.sub(r'<img\b[^>]*>',repl_img,block,count=min(8,len(chosen)),flags=re.I)
@@ -79,29 +86,28 @@ def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
     t=replace_first(r'<meta name="description" content=".*?">',f'<meta name="description" content="{html.escape(full)} {html.escape(intent)} 체인지클린. 청소 현장, 청소범위, 평당 11,000원, 빠른 견적문의.">',t)
     t=replace_first(r"<h1>.*?</h1>",f"<h1>{html.escape(dong)} {html.escape(intent)}<br>지역 전문 청소 서비스</h1>",t)
 
-    # 히어로 소개문구의 고정 부평 동 목록을 현재 시군구의 실제 동 목록으로 교체한다.
     hero_ds=local_dongs(dong,nearby,5)
     hero_regions='·'.join(html.escape(x) for x in hero_ds)
     t=re.sub(r'<p class="lead">.*?</p>',f'<p class="lead">{hero_regions} 등 지역별 청소 정보를 확인하고 청소 현장과 청소 범위를 살펴본 뒤 간편하게 견적을 문의할 수 있습니다.</p>',t,count=1,flags=re.S)
-
     t=replace_first(r'<div class="roller" id="roller">.*?</div></div></div></section>', '<div class="roller" id="roller">'+live_rows(sido,dong,nearby)+'</div></div></div></section>', t)
 
     area_dongs=[dong]+[x for x in nearby if x!=dong][:7]
     area_html=''.join(f'<a href="{region_url(sido,gugun,x)}">{html.escape(x)} 입주청소</a>' for x in area_dongs)
     t=replace_first(r'<div class="area">.*?</div>',f'<div class="area">{area_html}</div>',t)
 
-    gallery_titles=["주방 청소 작업 사례","후드·가스레인지 청소 사례","욕실 청소 작업 사례","싱크대 청소 작업 사례","바닥 청소 작업 사례","주방 수납장 청소 사례","창틀·유리 청소 사례","세면대 청소 작업 사례"]
-    gallery_desc=["입주·이사청소 작업 사진","오염 제거 작업 사진","욕실 청소 작업 사진","주방 청소 작업 사진","바닥 오염 제거 작업 사진","수납장 청소 작업 사진","창틀 청소 작업 사진","세면대 청소 작업 사진"]
+    # 사진 내용(주방/욕실 등)을 추측하지 않고 같은 시군구의 인근 동 작업사진으로 표시한다.
+    gnames=gallery_dongs(dong,nearby,8)
     cap_i=iter(range(8))
     def cap(m):
-        i=next(cap_i); return f'<figcaption><b>{gallery_titles[i]}</b><span>{gallery_desc[i]}</span></figcaption>'
-    t=re.sub(r"<figcaption>.*?</figcaption>",cap,t,flags=re.S)
+        i=next(cap_i)
+        return f'<figcaption><b>{html.escape(gnames[i])} 청소 작업사진</b><span>{html.escape(gugun)} 인근지역 청소 현장</span></figcaption>'
+    t=re.sub(r"<figcaption>.*?</figcaption>",cap,t,count=8,flags=re.S)
 
     if imgs:
         rnd=random.Random(full+"|"+intent)
         chosen=rnd.sample(imgs,min(8,len(imgs)))
         while len(chosen)<8: chosen+=chosen
-        t=replace_gallery_images(t,chosen[:8],intent,gallery_titles)
+        t=replace_gallery_images(t,chosen[:8],gnames)
 
     t=replace_first(r'<div class="links">.*?</div></div></section>', '<div class="links">'+service_links(sido,gugun,dong)+'</div></div></section>', t)
     t=re.sub(r'action="https://formspree\.io/f/[^"]+"','action="https://formspree.io/f/mvzlylrr"',t)
@@ -156,8 +162,7 @@ def main():
     (OUT/"index.html").write_text(make_home(rows),encoding="utf-8")
     urls=[region_url(s,g,d,sl) for s,g,d in rows for _,sl in INTENTS]
     (OUT/"urls.txt").write_text("\n".join(urls),encoding="utf-8")
-    broken=validate_links()
-    bad_images=validate_gallery_images()
+    broken=validate_links(); bad_images=validate_gallery_images()
     if broken:
         print(f"[오류] 내부링크 {len(broken):,}개가 실제 페이지와 연결되지 않습니다.")
         for page,href in broken[:20]: print(" -",page,"->",href)
