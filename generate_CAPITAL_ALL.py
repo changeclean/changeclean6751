@@ -35,6 +35,10 @@ def replace_first(pattern,repl,text): return re.sub(pattern,repl,text,count=1,fl
 def region_url(sido,gugun,dong,intent_slug="movein-cleaning"):
     return f'/{safe_ascii(f"{sido} {gugun} {dong}")}/{intent_slug}/'
 
+def service_links(sido,gugun,dong):
+    desc={"입주청소":"입주 전 전체 청소","이사청소":"이사 전후 청소","청소업체":"지역 청소업체 정보","입주청소 가격":"청소비용 안내","아파트청소":"아파트 청소 정보","원룸청소":"원룸 청소 정보","오피스텔청소":"오피스텔 청소","거주청소":"거주중 청소","사무실청소":"사무공간 청소","청소견적":"견적문의 안내"}
+    return ''.join(f'<a href="{region_url(sido,gugun,dong,slug)}"><b>{html.escape(dong)} {html.escape(label)}</b>{desc[label]}</a>' for label,slug in INTENTS)
+
 def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
     t=TEMPLATE; full=f"{sido} {gugun} {dong}"
     t=t.replace("인천 부평구",f"{sido} {gugun}").replace("부평구",gugun).replace("부평동",dong)
@@ -52,10 +56,7 @@ def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
     def cap(m):
         nd,b=next(caps); return f'<figcaption><b>{html.escape(nd)} {b} 청소</b><span>{html.escape(gugun)} {b} 청소 현장</span></figcaption>'
     t=re.sub(r"<figcaption>.*?</figcaption>",cap,t,flags=re.S)
-    link_html=[]; region_key=safe_ascii(full)
-    for label,sl in INTENTS:
-        link_html.append(f'<a href="/{region_key}/{sl}/"><b>{html.escape(dong)} {html.escape(label)}</b>{html.escape(label)} 정보</a>')
-    t=replace_first(r'<div class="links">.*?</div></div></section>','<div class="links">'+''.join(link_html)+'</div></div></section>',t)
+    t=replace_first(r'<div class="links">.*?</div></div></section>', '<div class="links">'+service_links(sido,gugun,dong)+'</div></div></section>', t)
     if imgs:
         rnd=random.Random(full+"|"+intent); chosen=rnd.sample(imgs,min(8,len(imgs)))
         while len(chosen)<8: chosen+=chosen
@@ -66,36 +67,27 @@ def make_page(sido,gugun,dong,intent,intent_slug,nearby,imgs):
 def make_home(rows):
     t=(ROOT/"index.html").read_text(encoding="utf-8")
     lookup={dong:(sido,gugun) for sido,gugun,dong in rows}
-    intent_paths={
-        "입주청소":"movein-cleaning",
-        "이사청소":"moving-cleaning",
-        "청소업체":"cleaning-company",
-        "입주청소-가격":"movein-cleaning-price",
-        "입주청소 가격":"movein-cleaning-price",
-        "아파트청소":"apartment-cleaning",
-        "원룸청소":"oneroom-cleaning",
-        "오피스텔청소":"officetel-cleaning",
-        "거주청소":"occupied-cleaning",
-        "사무실청소":"office-cleaning",
-        "청소견적":"cleaning-estimate",
-    }
-    suffixes=sorted(intent_paths,key=len,reverse=True)
-    def fix(m):
-        raw=m.group(1).strip()
-        raw=re.sub(r'^bu(?=[가-힣])','',raw,flags=re.I)
-        for suffix in suffixes:
-            marker='-'+suffix
-            if raw.endswith(marker):
-                dong=raw[:-len(marker)]
-                if dong in lookup:
-                    sido,gugun=lookup[dong]
-                    return f'href="{region_url(sido,gugun,dong,intent_paths[suffix])}"'
-        return m.group(0)
-    t=re.sub(r'href="([^"/]+?)/"',fix,t)
-    home_dongs=[x for x in ["부평동","산곡동","청천동","갈산동","삼산동","부개동"] if x in lookup]
-    area=''.join(f'<a href="{region_url(lookup[x][0],lookup[x][1],x)}">{x} 입주청소</a>' for x in home_dongs)
+    preferred=["부평동","산곡동","청천동","갈산동","삼산동","부개동"]
+    home_dongs=[x for x in preferred if x in lookup]
+    if not home_dongs:
+        home_dongs=[d for _,_,d in rows[:6]]
+    area=''.join(f'<a href="{region_url(lookup[x][0],lookup[x][1],x)}">{html.escape(x)} 입주청소</a>' for x in home_dongs)
     t=replace_first(r'<div class="area">.*?</div>',f'<div class="area">{area}</div>',t)
+    # 홈의 10개 서비스 링크는 기존 한글 href를 치환하지 않고 실제 생성 경로로 블록 자체를 새로 만든다.
+    base_dong="부평동" if "부평동" in lookup else home_dongs[0]
+    sido,gugun=lookup[base_dong]
+    t=replace_first(r'<div class="links">.*?</div></div></section>', '<div class="links">'+service_links(sido,gugun,base_dong)+'</div></div></section>', t)
     return t
+
+def validate_links():
+    broken=[]
+    for page in OUT.rglob("*.html"):
+        text=page.read_text(encoding="utf-8",errors="ignore")
+        for href in re.findall(r'href="(/[^"]+/)"',text):
+            if href.startswith(("/assets/","//")): continue
+            target=OUT/href.strip("/")/"index.html"
+            if not target.exists(): broken.append((page.relative_to(OUT).as_posix(),href))
+    return broken
 
 def main():
     rows=fetch_regions(); by_gu=build_neighbors(rows)
@@ -111,5 +103,10 @@ def main():
     (OUT/"index.html").write_text(make_home(rows),encoding="utf-8")
     urls=[region_url(s,g,d,sl) for s,g,d in rows for _,sl in INTENTS]
     (OUT/"urls.txt").write_text("\n".join(urls),encoding="utf-8")
-    print(f"[완료] {count:,}개 생성 / 내부링크 실제 ASCII 경로 적용")
+    broken=validate_links()
+    if broken:
+        print(f"[오류] 내부링크 {len(broken):,}개가 실제 페이지와 연결되지 않습니다.")
+        for page,href in broken[:20]: print(" -",page,"->",href)
+        raise SystemExit(1)
+    print(f"[완료] {count:,}개 생성 / 내부링크 검사 0개 오류")
 if __name__=="__main__": main()
